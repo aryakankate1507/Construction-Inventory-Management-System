@@ -1,0 +1,70 @@
+version: '3.8'
+
+name: arya-inventory
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: arya_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-arya_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-arya_secure_pass_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-arya_inventory}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arya_admin} -d ${POSTGRES_DB:-arya_inventory}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: arya_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: arya_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-arya_admin}:${POSTGRES_PASSWORD:-arya_secure_pass_2026}@postgres:5432/${POSTGRES_DB:-arya_inventory}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_key_arya_2026_change_in_prod}
+      ENVIRONMENT: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: arya_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
